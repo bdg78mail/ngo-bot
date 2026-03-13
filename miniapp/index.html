@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>НКО Потенциал — Поиск льгот</title>
+    <link rel="stylesheet" href="style.css">
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+</head>
+<body>
+    <div class="container">
+        <h1>Поиск льгот</h1>
+        <p class="subtitle">Заполните форму для персонального подбора</p>
+
+        <form id="benefitsForm">
+            <div class="form-group">
+                <label for="region">Регион</label>
+                <select id="region" name="region" required>
+                    <option value="">Выберите регион</option>
+                    <option value="sverdlovsk" data-name="Свердловская область">Свердловская область</option>
+                    <option value="moscow" data-name="Москва">Москва</option>
+                    <option value="spb" data-name="Санкт-Петербург">Санкт-Петербург</option>
+                    <option value="other" data-name="Другой регион">Другой регион</option>
+                </select>
+            </div>
+
+            <div class="form-group">
+                <label for="age">Возраст ребёнка</label>
+                <select id="age" name="age" required>
+                    <option value="">Выберите возраст</option>
+                    <option value="0-3" data-name="0-3 года">0-3 года</option>
+                    <option value="3-7" data-name="3-7 лет">3-7 лет</option>
+                    <option value="7-14" data-name="7-14 лет">7-14 лет</option>
+                    <option value="14-18" data-name="14-18 лет">14-18 лет</option>
+                    <option value="18+" data-name="Старше 18">Старше 18</option>
+                </select>
+            </div>
+
+            <div class="form-group">
+                <label for="category">Категория</label>
+                <select id="category" name="category" required>
+                    <option value="">Выберите категорию</option>
+                    <option value="disability" data-name="Ребёнок-инвалид">Ребёнок-инвалид</option>
+                    <option value="ovz" data-name="ОВЗ (без инвалидности)">ОВЗ (без инвалидности)</option>
+                    <option value="both" data-name="ОВЗ + инвалидность">ОВЗ + инвалидность</option>
+                </select>
+            </div>
+
+            <div class="form-group">
+                <label for="question">Ваш вопрос (необязательно)</label>
+                <textarea id="question" name="question" rows="3"
+                    placeholder="Опишите, что именно вас интересует..."></textarea>
+            </div>
+
+            <button type="submit" id="submitBtn">Найти льготы</button>
+        </form>
+
+        <div id="result" class="result hidden">
+            <h2>Результат</h2>
+            <div id="resultText"></div>
+        </div>
+
+        <div id="loading" class="loading hidden">
+            <div class="spinner"></div>
+            <p>Ищу информацию...</p>
+        </div>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+</html>
