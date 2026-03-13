@@ -6,7 +6,8 @@
 import os
 from dotenv import load_dotenv
 
-load_dotenv()
+load_dotenv()                                      # проектный .env (приоритет)
+load_dotenv(os.path.expanduser("~/.env"))           # глобальные ключи (заполняет пропуски)
 
 # Telegram бот (@special_kids_benefits_bot)
 BOT_TOKEN = os.getenv("NGO_BOT_TOKEN", "")
