@@ -4,6 +4,7 @@ Mini App отправляет POST с данными: region, age, category, que
 """
 
 import logging
+import re
 from services.router import classify_question
 from services.perplexity import search_benefits
 from services.recommendations import generate_recommendations
@@ -50,7 +51,7 @@ async def process_miniapp_request(data: dict) -> dict:
                 age=age,
                 category=category,
             )
-            return {"status": "ok", "answer": answer}
+            return {"status": "ok", "answer": _clean_md_for_web(answer)}
 
         elif request_type == "quick_answer":
             # Быстрый ответ — генерация рекомендаций по параметрам
@@ -60,7 +61,7 @@ async def process_miniapp_request(data: dict) -> dict:
                 category=category,
                 question=question,
             )
-            return {"status": "ok", "answer": answer}
+            return {"status": "ok", "answer": _clean_md_for_web(answer)}
 
         else:
             return {"status": "error", "message": f"Неизвестный тип запроса: {request_type}"}
@@ -68,3 +69,22 @@ async def process_miniapp_request(data: dict) -> dict:
     except Exception as e:
         log.error(f"Ошибка обработки Mini App: {e}")
         return {"status": "error", "message": "Произошла ошибка. Попробуйте позже."}
+
+
+def _clean_md_for_web(text: str) -> str:
+    """Очистка Markdown для отображения в Mini App (plain text)."""
+    # Убираем сноски [1][2]
+    text = re.sub(r"(\[\d+\])+", "", text)
+    # Заголовки: #### Текст → Текст
+    text = re.sub(r"^#{1,6}\s+", "", text, flags=re.MULTILINE)
+    # Жирный: **текст** → текст
+    text = re.sub(r"\*{2}(.+?)\*{2}", r"\1", text)
+    # Курсив: *текст* → текст
+    text = re.sub(r"\*(.+?)\*", r"\1", text)
+    # Убираем --- разделители
+    text = re.sub(r"^-{3,}$", "", text, flags=re.MULTILINE)
+    # Маркированные списки: - → •
+    text = re.sub(r"^[-*]\s+", "• ", text, flags=re.MULTILINE)
+    # Лишние пустые строки
+    text = re.sub(r"\n{3,}", "\n\n", text)
+    return text.strip()

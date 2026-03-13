@@ -4,7 +4,7 @@
 """
 
 import logging
-from telegram import Update
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes
 
 from services.router import classify_question
@@ -13,6 +13,7 @@ from services.claude import consult
 from services.recommendations import generate_recommendations
 from services.program_search import search_programs
 from services.pdf_report import generate_and_send_pdf
+from services.formatter import md_to_telegram_html
 from handlers.feedback import save_user_feedback
 
 log = logging.getLogger("ngo_bot.text")
@@ -51,16 +52,16 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         # Быстрый ответ по ключевым словам
         answer = result.get("quick_answer", "")
         if answer:
-            await _send_long_message(update, answer)
+            await _send_long_message(update, answer, context)
         else:
             # Фолбек на Perplexity если ответ пустой
             answer = await search_benefits(text)
-            await _send_long_message(update, answer)
+            await _send_long_message(update, answer, context)
 
     elif question_type == "consultation":
         # Консультация: сначала Perplexity для фактов, потом Claude для анализа
         answer = await search_benefits(text)
-        await _send_long_message(update, answer)
+        await _send_long_message(update, answer, context)
 
     elif question_type == "pdf_report":
         # Генерация PDF-отчёта
@@ -71,31 +72,48 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         # Поиск программ поддержки
         await update.message.reply_text("Ищу подходящие программы...")
         answer = await search_programs(text)
-        await _send_long_message(update, answer)
+        await _send_long_message(update, answer, context)
 
     else:
         # Неизвестный тип — отправляем в Perplexity
         answer = await search_benefits(text)
-        await _send_long_message(update, answer)
+        await _send_long_message(update, answer, context)
 
 
-async def _send_long_message(update: Update, text: str):
-    """Отправка длинного сообщения с разбивкой по частям."""
+async def _send_long_message(update: Update, text: str, context: ContextTypes.DEFAULT_TYPE = None, format_md: bool = True):
+    """Отправка длинного сообщения с форматированием и кнопкой «Прослушать»."""
+    # Сохраняем оригинал для TTS (до форматирования)
+    raw_text = text
+
+    if format_md:
+        text = md_to_telegram_html(text)
+
+    # Кнопка «Прослушать»
+    keyboard = InlineKeyboardMarkup([
+        [InlineKeyboardButton("Прослушать", callback_data="tts_listen")]
+    ])
+
     if len(text) <= MAX_MESSAGE_LENGTH:
-        await update.message.reply_text(text)
-        return
-
-    # Разбиваем по абзацам
-    parts = []
-    current = ""
-    for line in text.split("\n"):
-        if len(current) + len(line) + 1 > MAX_MESSAGE_LENGTH:
+        await update.message.reply_text(text, parse_mode="HTML", reply_markup=keyboard)
+    else:
+        # Разбиваем по абзацам
+        parts = []
+        current = ""
+        for line in text.split("\n"):
+            if len(current) + len(line) + 1 > MAX_MESSAGE_LENGTH:
+                parts.append(current)
+                current = line
+            else:
+                current = current + "\n" + line if current else line
+        if current:
             parts.append(current)
-            current = line
-        else:
-            current = current + "\n" + line if current else line
-    if current:
-        parts.append(current)
 
-    for part in parts:
-        await update.message.reply_text(part)
+        # Все части кроме последней — без кнопки
+        for part in parts[:-1]:
+            await update.message.reply_text(part, parse_mode="HTML")
+        # Последняя часть — с кнопкой
+        await update.message.reply_text(parts[-1], parse_mode="HTML", reply_markup=keyboard)
+
+    # Сохраняем текст для TTS
+    if context is not None:
+        context.chat_data["last_answer"] = raw_text

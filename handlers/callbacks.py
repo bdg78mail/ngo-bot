@@ -3,8 +3,11 @@
 """
 
 import logging
+import os
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes
+
+from services.tts import synthesize
 
 log = logging.getLogger("ngo_bot.callbacks")
 
@@ -25,6 +28,7 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "about": _about,
         "feedback": _feedback,
         "back_to_menu": _back_to_menu,
+        "tts_listen": _tts_listen,
     }
 
     handler = handlers.get(data)
@@ -129,3 +133,37 @@ async def _back_to_menu(query, context):
         "Выберите действие или просто напишите ваш вопрос:",
         reply_markup=InlineKeyboardMarkup(keyboard),
     )
+
+
+async def _tts_listen(query, context):
+    """Кнопка «Прослушать» — озвучка последнего ответа."""
+    text = context.chat_data.get("last_answer", "")
+
+    if not text:
+        await query.edit_message_reply_markup(reply_markup=None)
+        await query.message.reply_text("Нет текста для озвучки.")
+        return
+
+    # Показываем что генерируем аудио
+    await query.answer("Генерирую аудио...")
+    chat_id = query.message.chat_id
+    await context.bot.send_chat_action(chat_id=chat_id, action="record_voice")
+
+    # Генерируем TTS
+    audio_path = await synthesize(text)
+
+    if audio_path:
+        try:
+            with open(audio_path, "rb") as audio_file:
+                await context.bot.send_voice(
+                    chat_id=chat_id,
+                    voice=audio_file,
+                )
+        finally:
+            # Удаляем временный файл
+            try:
+                os.unlink(audio_path)
+            except OSError:
+                pass
+    else:
+        await query.message.reply_text("Не удалось сгенерировать аудио. Попробуйте позже.")

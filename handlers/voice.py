@@ -3,11 +3,12 @@
 """
 
 import logging
-from telegram import Update
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes
 
 from services.whisper import download_and_transcribe
 from services.perplexity import search_benefits
+from services.formatter import md_to_telegram_html
 
 log = logging.getLogger("ngo_bot.voice")
 
@@ -45,4 +46,13 @@ async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # Отправляем в тот же pipeline что и текст
     await context.bot.send_chat_action(chat_id=chat_id, action="typing")
     answer = await search_benefits(text)
-    await update.message.reply_text(answer)
+    formatted = md_to_telegram_html(answer)
+
+    # Кнопка «Прослушать»
+    keyboard = InlineKeyboardMarkup([
+        [InlineKeyboardButton("Прослушать", callback_data="tts_listen")]
+    ])
+    await update.message.reply_text(formatted, parse_mode="HTML", reply_markup=keyboard)
+
+    # Сохраняем текст для TTS
+    context.chat_data["last_answer"] = answer

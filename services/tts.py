@@ -1,66 +1,108 @@
 """
-TTS (Text-to-Speech) — озвучка ответов.
-Поддержка: Yandex SpeechKit, Sber Salute Speech.
-Не приоритет — заглушка для будущей реализации.
+TTS (Text-to-Speech) — озвучка ответов через OpenAI TTS.
+Голос: nova (женский, дружелюбный).
 """
 
 import logging
-import httpx
+import re
 import tempfile
+from openai import AsyncOpenAI
 
-from config import YANDEX_TTS_API_KEY, SBER_TTS_API_KEY
+from config import OPENAI_API_KEY
 
 log = logging.getLogger("ngo_bot.tts")
 
+# Лимит символов для TTS (OpenAI принимает до 4096)
+MAX_TTS_CHARS = 4000
 
-async def synthesize(text: str, engine: str = "yandex") -> str | None:
+
+async def synthesize(text: str) -> str | None:
     """
-    Синтез речи из текста.
+    Синтез речи из текста через OpenAI TTS.
 
     Args:
-        text: текст для озвучки
-        engine: "yandex" или "sber"
+        text: текст для озвучки (Markdown/HTML — будет очищен)
 
     Returns:
-        Путь к аудиофайлу или None
+        Путь к .ogg аудиофайлу или None при ошибке
     """
-    if engine == "yandex" and YANDEX_TTS_API_KEY:
-        return await _yandex_tts(text)
-    elif engine == "sber" and SBER_TTS_API_KEY:
-        return await _sber_tts(text)
-    else:
-        log.warning(f"TTS движок {engine} не настроен")
+    if not OPENAI_API_KEY:
+        log.warning("OPENAI_API_KEY не задан — TTS недоступен")
         return None
 
+    # Очищаем от разметки для естественной речи
+    clean = _clean_for_speech(text)
 
-async def _yandex_tts(text: str) -> str | None:
-    """Yandex SpeechKit TTS."""
-    url = "https://tts.api.cloud.yandex.net/speech/v1/tts:synthesize"
-    headers = {"Authorization": f"Api-Key {YANDEX_TTS_API_KEY}"}
-    data = {
-        "text": text[:1000],  # Лимит Yandex
-        "lang": "ru-RU",
-        "voice": "alena",
-        "emotion": "friendly",
-        "format": "oggopus",
-    }
+    if not clean.strip():
+        log.warning("Пустой текст после очистки — нечего озвучивать")
+        return None
+
+    # Обрезаем если слишком длинный (по предложениям)
+    if len(clean) > MAX_TTS_CHARS:
+        clean = _truncate_smart(clean, MAX_TTS_CHARS)
 
     try:
-        async with httpx.AsyncClient(timeout=30) as client:
-            resp = await client.post(url, headers=headers, data=data)
-            resp.raise_for_status()
+        client = AsyncOpenAI(api_key=OPENAI_API_KEY)
+        response = await client.audio.speech.create(
+            model="tts-1",
+            voice="nova",
+            input=clean,
+            response_format="opus",
+        )
 
-            tmp = tempfile.NamedTemporaryFile(suffix=".ogg", delete=False)
-            tmp.write(resp.content)
-            tmp.close()
-            return tmp.name
+        # Сохраняем в временный файл
+        tmp = tempfile.NamedTemporaryFile(suffix=".ogg", delete=False)
+        tmp.write(response.content)
+        tmp.close()
+
+        log.info(f"TTS: сгенерировано {len(clean)} символов → {tmp.name}")
+        return tmp.name
+
     except Exception as e:
-        log.error(f"Yandex TTS ошибка: {e}")
+        log.error(f"OpenAI TTS ошибка: {e}")
         return None
 
 
-async def _sber_tts(text: str) -> str | None:
-    """Sber Salute Speech TTS."""
-    # TODO: реализовать Sber TTS API
-    log.warning("Sber TTS пока не реализован")
-    return None
+def _clean_for_speech(text: str) -> str:
+    """Очистка текста от разметки для естественной речи."""
+    # Убираем HTML-теги
+    text = re.sub(r"<[^>]+>", "", text)
+    # Убираем HTML-сущности
+    text = text.replace("&amp;", "&").replace("&lt;", "<").replace("&gt;", ">")
+    # Убираем сноски [1][2]
+    text = re.sub(r"(\[\d+\])+", "", text)
+    # Убираем Markdown-заголовки
+    text = re.sub(r"^#{1,6}\s+", "", text, flags=re.MULTILINE)
+    # Убираем жирный/курсив
+    text = re.sub(r"\*{1,3}(.+?)\*{1,3}", r"\1", text)
+    # Маркеры списков → пауза
+    text = re.sub(r"^[-•]\s+", "— ", text, flags=re.MULTILINE)
+    # Убираем горизонтальные линии
+    text = re.sub(r"^-{3,}$", "", text, flags=re.MULTILINE)
+    # Убираем ссылки [текст](url) → текст
+    text = re.sub(r"\[([^\]]+)\]\([^)]+\)", r"\1", text)
+    # Лишние пустые строки
+    text = re.sub(r"\n{3,}", "\n\n", text)
+    return text.strip()
+
+
+def _truncate_smart(text: str, max_chars: int) -> str:
+    """Обрезка текста по предложениям (не на полуслове)."""
+    if len(text) <= max_chars:
+        return text
+
+    # Ищем последнюю точку/восклицание/вопрос до лимита
+    truncated = text[:max_chars]
+    last_sentence = max(
+        truncated.rfind(". "),
+        truncated.rfind("! "),
+        truncated.rfind("? "),
+        truncated.rfind(".\n"),
+        truncated.rfind("!\n"),
+        truncated.rfind("?\n"),
+    )
+
+    if last_sentence > max_chars // 2:
+        return truncated[: last_sentence + 1]
+
+    return truncated
