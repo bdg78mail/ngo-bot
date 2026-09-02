@@ -29,3 +29,6 @@ logs/
 
 # ChromaDB
 chroma_db/
+
+# Контакты для бота — не публиковать
+data/contacts.local.json
